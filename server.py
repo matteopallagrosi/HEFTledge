@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ProcessPoolExecutor
 
 import json
-from optimizer import OptimizerParams, LPOptimizer
+from optimizer import OptimizerParams
 from heftless import HEFTless
 
 executor = ProcessPoolExecutor(max_workers=10)
@@ -12,8 +12,6 @@ def compute_task_assignment(path: str, post_data: str):
     params = OptimizerParams.from_json(post_data)
     if path == "/heftless":
         return HEFTless().run(params)
-    if path == "/ilp":
-        return LPOptimizer().solve(params)
     raise ValueError("Unknown path: " + path)
 
 class RequestHandler(BaseHTTPRequestHandler):
