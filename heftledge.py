@@ -165,15 +165,15 @@ class HEFTless:
             best_end = 0
 
             if t == START:
-                base_start_time = 0
+                start_time = 0
                 input_size = p.input_size
             else:
-                base_start_time = max([compl_time[x] for x in predecessors[t]])
+                start_time = max([compl_time[x] for x in predecessors[t]])
                 input_size = sum([p.output_size[x] for x in predecessors[t]])
 
             for n in all_nodes:
                 prep_time = input_size/p.ds_bandwidth[n]/10**6 + p.exectime[(t,n)] + p.init_time[(t,n)]
-                end_time = base_start_time + prep_time
+                end_time = start_time + prep_time
 
                 mem_used_in_interval = 0
                 cpu_used_in_interval = 0
@@ -181,7 +181,7 @@ class HEFTless:
                 for (sched_start, sched_end, sched_mem, sched_cpu) in node_resource_timeline[n]:
                     # C'è sovrapposizione se la fine del nuovo non precede l'inizio del vecchio
                     # E l'inizio del nuovo non segue la fine del vecchio
-                    if not (end_time <= sched_start or base_start_time >= sched_end):
+                    if not (end_time <= sched_start or start_time >= sched_end):
                         mem_used_in_interval += sched_mem
                         cpu_used_in_interval += sched_cpu
 
@@ -200,7 +200,7 @@ class HEFTless:
                             task_assignment[t] = n
                             compl_time[t] = compl_time_on_n
                             # Salviamo i tempi esatti associati alla scelta migliore
-                            best_start = base_start_time
+                            best_start = start_time
                             best_end = end_time
 
             if not t in task_assignment:
