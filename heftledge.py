@@ -164,15 +164,41 @@ class HEFTless:
             best_start = 0
             best_end = 0
 
-            if t == START:
-                start_time = 0
-                input_size = p.input_size
-            else:
-                start_time = max([compl_time[x] for x in predecessors[t]])
-                input_size = sum([p.output_size[x] for x in predecessors[t]])
-
             for n in all_nodes:
-                prep_time = input_size/p.ds_bandwidth[n]/10**6 + p.exectime[(t,n)] + p.init_time[(t,n)]
+                if t == START:
+                    start_time = 0
+                    prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
+                else:
+                    ready_times = []
+                    coord = p.handling_node
+
+                    for prev in predecessors[t]:
+                        prev_node = task_assignment[prev]
+
+                        if prev_node == n:
+                            # stesso nodo: il dato è già in memoria locale. Costo = 0
+                            comm_time = 0.0
+                        else:
+                            # nodi diversi: topologia a stella via coordinatore.
+                            comm_time = 0.0
+
+                            # Tratto 1: Dal worker precedente al Coordinatore (se il worker non è già il coord)
+                            if prev_node != coord:
+                                comm_time += p.output_size[prev] / p.node_bandwidth[(prev_node, coord)] / 10**6
+                                comm_time += p.node_latency[(prev_node, coord)]
+
+                            # Tratto 2: Dal Coordinatore al nuovo worker (se il nuovo worker non è già il coord)
+                            if n != coord:
+                                comm_time += p.output_size[prev] / p.node_bandwidth[(coord, n)] / 10**6
+                                comm_time += p.node_latency[(coord, n)]
+
+                        ready_times.append(compl_time[prev] + comm_time)
+
+                    # Il task non può iniziare finché non ha ricevuto tutti gli input dai predecessori
+                    start_time = max(ready_times) if ready_times else 0
+
+                    prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
+
                 end_time = start_time + prep_time
 
                 mem_used_in_interval = 0
@@ -199,7 +225,7 @@ class HEFTless:
                             obj = _obj
                             task_assignment[t] = n
                             compl_time[t] = compl_time_on_n
-                            # Salviamo i tempi esatti associati alla scelta migliore
+                            # Salva i tempi esatti associati alla scelta migliore
                             best_start = start_time
                             best_end = end_time
 
@@ -209,7 +235,6 @@ class HEFTless:
 
             chosen_node = task_assignment[t]
 
-            # REGISTRAZIONE NELLA TIMELINE
             node_resource_timeline[chosen_node].append(
                 (best_start, best_end, p.task_memory[t], p.task_cpus[t])
             )

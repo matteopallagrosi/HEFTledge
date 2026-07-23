@@ -33,6 +33,7 @@ class OptimizerParams:
         self.ds_bandwidth = {}
         self.ds_latency = {}
         self.node_latency = {}
+        self.node_bandwidth = {}
 
     def all_nodes (self):
         return self.edge_nodes.union(self.cloud_nodes)
@@ -73,6 +74,7 @@ class OptimizerParams:
             "ds_bandwidth": self.ds_bandwidth,
             "ds_latency": self.ds_latency,
             "node_latency": self._encode_tuple_dict(self.node_latency),
+            "node_bandwidth": self._encode_tuple_dict(self.node_bandwidth),
         })
 
     @classmethod
@@ -113,6 +115,7 @@ class OptimizerParams:
         obj.ds_bandwidth = data["ds_bandwidth"]
         obj.ds_latency = data["ds_latency"]
         obj.node_latency = obj._decode_tuple_dict(data["node_latency"])
+        obj.node_bandwidth = obj._decode_tuple_dict(data.get("node_bandwidth", {}))
         return obj
 
     def __str__(self):
@@ -215,6 +218,11 @@ class OptimizerParams:
         for k,v in self.node_latency.items():
             n1,n2 = k
             p.node_latency[(translator[n1], translator[n2])] = v
+
+        p.node_bandwidth = {}
+        for k,v in self.node_bandwidth.items():
+            n1,n2 = k
+            p.node_bandwidth[(translator[n1], translator[n2])] = v
 
         return p, back_translator
 
