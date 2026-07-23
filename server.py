@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import json
 from optimizer import OptimizerParams
-from heftless import HEFTless
+from heftledge import HEFTless
 
 executor = ProcessPoolExecutor(max_workers=10)
 

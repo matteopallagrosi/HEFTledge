@@ -155,23 +155,42 @@ class HEFTless:
         compl_time = {}
         task_assignment = {}
 
+        # Inizializzazione della timeline: traccia (start, end, memoria_usata, cpu_usata)
+        node_resource_timeline = {n: [] for n in all_nodes}
+
+
         for t in ordered_tasks:
             obj = float("inf")
+            best_start = 0
+            best_end = 0
+
+            if t == START:
+                base_start_time = 0
+                input_size = p.input_size
+            else:
+                base_start_time = max([compl_time[x] for x in predecessors[t]])
+                input_size = sum([p.output_size[x] for x in predecessors[t]])
+
             for n in all_nodes:
-                has_memory = (not n in p.node_available_memory) or p.node_available_memory[n] >= p.task_memory[t]
-                has_cpu = (not n in p.node_available_cpus) or p.node_available_cpus[n] >= p.task_cpus[t]
+                prep_time = input_size/p.ds_bandwidth[n]/10**6 + p.exectime[(t,n)] + p.init_time[(t,n)]
+                end_time = base_start_time + prep_time
+
+                mem_used_in_interval = 0
+                cpu_used_in_interval = 0
+
+                for (sched_start, sched_end, sched_mem, sched_cpu) in node_resource_timeline[n]:
+                    # C'è sovrapposizione se la fine del nuovo non precede l'inizio del vecchio
+                    # E l'inizio del nuovo non segue la fine del vecchio
+                    if not (end_time <= sched_start or base_start_time >= sched_end):
+                        mem_used_in_interval += sched_mem
+                        cpu_used_in_interval += sched_cpu
+
+                has_memory = (not n in p.node_available_memory) or (p.node_available_memory[n] - mem_used_in_interval >= p.task_memory[t])
+                has_cpu = (not n in p.node_available_cpus) or (p.node_available_cpus[n] - cpu_used_in_interval >= p.task_cpus[t])
 
                 if has_memory and has_cpu: # NOTE: Heftless checks CPU, concurrency, bandwidth and memory
-                    if t == START:
-                        input_size = p.input_size
-                    else:
-                        input_size = sum([p.output_size[x] for x in predecessors[t]])
-                    prep_time = input_size/p.ds_bandwidth[n]/10**6 + p.exectime[(t,n)] + p.init_time[(t,n)]
                     task_cost = (p.exectime[(t,n)] + p.init_time[(t,n)]) * p.cost[n]
-
-                    compl_time_on_n = prep_time
-                    if t != START:
-                        compl_time_on_n += max([compl_time[x] for x in predecessors[t]])
+                    compl_time_on_n = end_time
                     print(f"Completion time of {t} on {n}: {compl_time_on_n}")
 
                     if compl_time_on_n <= p.deadline:
@@ -180,16 +199,20 @@ class HEFTless:
                             obj = _obj
                             task_assignment[t] = n
                             compl_time[t] = compl_time_on_n
+                            # Salviamo i tempi esatti associati alla scelta migliore
+                            best_start = base_start_time
+                            best_end = end_time
+
             if not t in task_assignment:
                 print("UNFEASIBLE")
                 raise RuntimeError("Unfeasible solution!")
 
             chosen_node = task_assignment[t]
-            if chosen_node in p.node_available_memory:
-                p.node_available_memory[chosen_node] -= p.task_memory[t]
 
-            if chosen_node in p.node_available_cpus:
-                p.node_available_cpus[chosen_node] -= p.task_cpus[t]
+            # REGISTRAZIONE NELLA TIMELINE
+            node_resource_timeline[chosen_node].append(
+                (best_start, best_end, p.task_memory[t], p.task_cpus[t])
+            )
 
         # Fix node identifiers
         for t in p.T:
