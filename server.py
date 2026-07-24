@@ -38,7 +38,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 def run(port=8080):
     server_address = ('', port)
     httpd = ThreadingHTTPServer(server_address, RequestHandler)
-    print(f"🚀 Server running on http://localhost:{port}/")
+    print(f"Server running on http://localhost:{port}/")
     httpd.serve_forever()
 
 if __name__ == "__main__":

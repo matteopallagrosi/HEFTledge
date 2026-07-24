@@ -91,8 +91,6 @@ class HEFTless:
 
         all_nodes = p.all_nodes()
 
-        task_prob = self.compute_task_exec_probabilities(p)
-
         # ---------------------------------
         wMakespan = p.obj_weights[0]
         wCost = p.obj_weights[2]
@@ -155,7 +153,7 @@ class HEFTless:
         compl_time = {}
         task_assignment = {}
 
-        # Inizializzazione della timeline: traccia (start, end, memoria_usata, cpu_usata)
+        # Timeline initialization: tracks (start, end, memory_used, cpu_used)
         node_resource_timeline = {n: [] for n in all_nodes}
 
 
@@ -171,48 +169,41 @@ class HEFTless:
                 else:
                     coord = p.handling_node
 
-                    coord_ready_time = 0      # Quando il coord ha ricevuto tutti i dati remoti
-                    max_local_finish = 0      # Quando finisce l'ultimo task predecessore già locale
-                    payload_to_send = 0       # Somma dei dati da impacchettare
-                    needs_remote_transfer = False
-
+                    # Check if all predecessor tasks are scheduled on the current node 'n'
+                    all_local = True
                     for prev in predecessors[t]:
-                        prev_node = task_assignment[prev]
+                        if task_assignment[prev] != n:
+                            all_local = False
+                            break
 
-                        if prev_node == n:
-                            # Stesso nodo: il dato è già in memoria locale. Costo = 0
-                            max_local_finish = max(max_local_finish, compl_time[prev])
-                        else:
-                            # Trasferimento remoto: i dati devono arrivare al coordinatore
-                            needs_remote_transfer = True
+                    if all_local:
+                        # Case 1: Continuous execution on node 'n'; no offloading.
+                        start_time = max([compl_time[prev] for prev in predecessors[t]])
+                    else:
+                        # Case 2: Serverledge stateless offloading. Data generated on 'n' also
+                        # returns to the coordinator and is bundled into the new request.
+                        coord_ready_time = 0    # Time at which the coordinator has received all necessary remote data
+                        payload_to_send = 0     # Total size of the data to be bundled in the payload
 
+
+                        for prev in predecessors[t]:
+                            prev_node = task_assignment[prev]
+
+                            # Transfer to the coordinator, unless prev_node is the coordinator
                             if prev_node == coord:
                                 arrive_coord = compl_time[prev]
                             else:
                                 arrive_coord = compl_time[prev] + p.output_size[prev] / p.node_bandwidth[(prev_node, coord)] / 10**6 + p.node_latency[(prev_node, coord)]
 
-                            # Il coordinatore deve aspettare il branch più lento
                             coord_ready_time = max(coord_ready_time, arrive_coord)
-
                             payload_to_send += p.output_size[prev]
 
-                    # Calcola quando il task 't' può effettivamente iniziare su 'n'
-                    if not needs_remote_transfer:
-                        # Tutti i predecessori erano sullo stesso nodo 'n'.
-                        start_time = max_local_finish
-                    else:
-                        # Il coordinatore deve fare la richiesta di offload impacchettata
+                        # The coordinator bundles all data into a single offload request
                         if n == coord:
-                            # Il target è il coordinatore stesso: i dati sono già lì, deve solo
-                            # aspettare che l'ultimo dato arrivi e che i suoi task locali finiscano.
-                            start_time = max(coord_ready_time, max_local_finish)
+                            start_time = coord_ready_time
                         else:
-                            # Il coordinatore invia il pacchetto di dati al nodo remoto 'n'
                             transfer_to_n = payload_to_send / p.node_bandwidth[(coord, n)] / 10**6 + p.node_latency[(coord, n)]
-
-                            # Il task parte quando arriva il pacchetto dal coord e
-                            # i task precedenti locali hanno finito di elaborare
-                            start_time = max(coord_ready_time + transfer_to_n, max_local_finish)
+                            start_time = coord_ready_time + transfer_to_n
 
                     prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
 
@@ -222,8 +213,8 @@ class HEFTless:
                 cpu_used_in_interval = 0
 
                 for (sched_start, sched_end, sched_mem, sched_cpu) in node_resource_timeline[n]:
-                    # C'è sovrapposizione se la fine del nuovo task non precede l'inizio del vecchio task
-                    # e l'inizio del nuovo task non segue la fine del vecchio task
+                    # Check for time overlap with the scheduled task.
+                    # If they overlap, sum the resources.
                     if not (end_time <= sched_start or start_time >= sched_end):
                         mem_used_in_interval += sched_mem
                         cpu_used_in_interval += sched_cpu
@@ -242,7 +233,6 @@ class HEFTless:
                             obj = _obj
                             task_assignment[t] = n
                             compl_time[t] = compl_time_on_n
-                            # Salva i tempi esatti associati alla scelta migliore
                             best_start = start_time
                             best_end = end_time
 
@@ -252,9 +242,7 @@ class HEFTless:
 
             chosen_node = task_assignment[t]
 
-            node_resource_timeline[chosen_node].append(
-                (best_start, best_end, p.task_memory[t], p.task_cpus[t])
-            )
+            node_resource_timeline[chosen_node].append((best_start, best_end, p.task_memory[t], p.task_cpus[t]))
 
         # Fix node identifiers
         for t in p.T:
