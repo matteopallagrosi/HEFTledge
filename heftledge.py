@@ -169,33 +169,50 @@ class HEFTless:
                     start_time = 0
                     prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
                 else:
-                    ready_times = []
                     coord = p.handling_node
+
+                    coord_ready_time = 0      # Quando il coord ha ricevuto tutti i dati remoti
+                    max_local_finish = 0      # Quando finisce l'ultimo task predecessore già locale
+                    payload_to_send = 0       # Somma dei dati da impacchettare
+                    needs_remote_transfer = False
 
                     for prev in predecessors[t]:
                         prev_node = task_assignment[prev]
 
                         if prev_node == n:
-                            # stesso nodo: il dato è già in memoria locale. Costo = 0
-                            comm_time = 0.0
+                            # Stesso nodo: il dato è già in memoria locale. Costo = 0
+                            max_local_finish = max(max_local_finish, compl_time[prev])
                         else:
-                            # nodi diversi: topologia a stella via coordinatore.
-                            comm_time = 0.0
+                            # Trasferimento remoto: i dati devono arrivare al coordinatore
+                            needs_remote_transfer = True
 
-                            # Tratto 1: Dal worker precedente al Coordinatore (se il worker non è già il coord)
-                            if prev_node != coord:
-                                comm_time += p.output_size[prev] / p.node_bandwidth[(prev_node, coord)] / 10**6
-                                comm_time += p.node_latency[(prev_node, coord)]
+                            if prev_node == coord:
+                                arrive_coord = compl_time[prev]
+                            else:
+                                arrive_coord = compl_time[prev] + p.output_size[prev] / p.node_bandwidth[(prev_node, coord)] / 10**6 + p.node_latency[(prev_node, coord)]
 
-                            # Tratto 2: Dal Coordinatore al nuovo worker (se il nuovo worker non è già il coord)
-                            if n != coord:
-                                comm_time += p.output_size[prev] / p.node_bandwidth[(coord, n)] / 10**6
-                                comm_time += p.node_latency[(coord, n)]
+                            # Il coordinatore deve aspettare il branch più lento
+                            coord_ready_time = max(coord_ready_time, arrive_coord)
 
-                        ready_times.append(compl_time[prev] + comm_time)
+                            payload_to_send += p.output_size[prev]
 
-                    # Il task non può iniziare finché non ha ricevuto tutti gli input dai predecessori
-                    start_time = max(ready_times) if ready_times else 0
+                    # Calcola quando il task 't' può effettivamente iniziare su 'n'
+                    if not needs_remote_transfer:
+                        # Tutti i predecessori erano sullo stesso nodo 'n'.
+                        start_time = max_local_finish
+                    else:
+                        # Il coordinatore deve fare la richiesta di offload impacchettata
+                        if n == coord:
+                            # Il target è il coordinatore stesso: i dati sono già lì, deve solo
+                            # aspettare che l'ultimo dato arrivi e che i suoi task locali finiscano.
+                            start_time = max(coord_ready_time, max_local_finish)
+                        else:
+                            # Il coordinatore invia il pacchetto di dati al nodo remoto 'n'
+                            transfer_to_n = payload_to_send / p.node_bandwidth[(coord, n)] / 10**6 + p.node_latency[(coord, n)]
+
+                            # Il task parte quando arriva il pacchetto dal coord e
+                            # i task precedenti locali hanno finito di elaborare
+                            start_time = max(coord_ready_time + transfer_to_n, max_local_finish)
 
                     prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
 
@@ -205,8 +222,8 @@ class HEFTless:
                 cpu_used_in_interval = 0
 
                 for (sched_start, sched_end, sched_mem, sched_cpu) in node_resource_timeline[n]:
-                    # C'è sovrapposizione se la fine del nuovo non precede l'inizio del vecchio
-                    # E l'inizio del nuovo non segue la fine del vecchio
+                    # C'è sovrapposizione se la fine del nuovo task non precede l'inizio del vecchio task
+                    # e l'inizio del nuovo task non segue la fine del vecchio task
                     if not (end_time <= sched_start or start_time >= sched_end):
                         mem_used_in_interval += sched_mem
                         cpu_used_in_interval += sched_cpu
