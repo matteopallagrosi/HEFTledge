@@ -6,7 +6,7 @@ import sys
 
 from optimizer import OptimizerParams, START, END, sample_params
 
-
+EPSILON = 1e-9
 
 class HEFTless:
 
@@ -161,11 +161,14 @@ class HEFTless:
             obj = float("inf")
             best_start = 0
             best_end = 0
+            best_locality = -1
 
             for n in all_nodes:
                 if t == START:
                     start_time = 0
                     prep_time = p.exectime[(t,n)] + p.init_time[(t,n)]
+
+                    locality_score = 1 if n == p.handling_node else 0
                 else:
                     coord = p.handling_node
 
@@ -177,6 +180,13 @@ class HEFTless:
                             break
 
                     if all_local:
+                        locality_score = 2  # Highest preference: same node
+                    elif n == coord:
+                        locality_score = 1  # Medium preference: coordinator node
+                    else:
+                        locality_score = 0  # Low preference: remote worker
+
+                    if all_local:
                         # Case 1: Continuous execution on node 'n'; no offloading.
                         start_time = max([compl_time[prev] for prev in predecessors[t]])
                     else:
@@ -184,7 +194,6 @@ class HEFTless:
                         # returns to the coordinator and is bundled into the new request.
                         coord_ready_time = 0    # Time at which the coordinator has received all necessary remote data
                         payload_to_send = 0     # Total size of the data to be bundled in the payload
-
 
                         for prev in predecessors[t]:
                             prev_node = task_assignment[prev]
@@ -229,8 +238,13 @@ class HEFTless:
 
                     if compl_time_on_n <= p.deadline:
                         _obj = wCost*task_cost/COST_NORMALIZER + wMakespan*compl_time_on_n/MAKESPAN_NORMALIZER
-                        if _obj < obj:
+
+                        is_better = _obj < (obj - EPSILON)
+                        is_tie = abs(_obj - obj) <= EPSILON
+
+                        if is_better or (is_tie and locality_score > best_locality):
                             obj = _obj
+                            best_locality = locality_score
                             task_assignment[t] = n
                             compl_time[t] = compl_time_on_n
                             best_start = start_time
