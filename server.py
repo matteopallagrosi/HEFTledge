@@ -26,6 +26,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             response = json.dumps(result).encode('utf-8')
             self.send_response(200)
         except Exception as e:
+            print(f"Crash Optimizer: {str(e)}")
+            import traceback; traceback.print_exc()
             response = json.dumps({"error": str(e)}).encode('utf-8')
             self.send_response(400)
 
