@@ -152,8 +152,8 @@ class HEFTless:
 
         compl_time = {}
         task_assignment = {}
-        #accumulated_cost = {t: 0.0 for t in ordered_tasks}
-        #accumulated_cost[START] = 0.0
+        accumulated_cost = {t: 0.0 for t in ordered_tasks}
+        accumulated_cost[START] = 0.0
 
         # Timeline initialization: tracks (start, end, memory_used, cpu_used)
         node_resource_timeline = {n: [] for n in all_nodes}
@@ -238,15 +238,15 @@ class HEFTless:
                     compl_time_on_n = end_time
                     print(f"Completion time of {t} on {n}: {compl_time_on_n}")
 
-                    #if t == START:
-                    #    prev_cost = 0.0
-                    #else:
-                    #    prev_cost = max([accumulated_cost[prev] for prev in predecessors[t]])
+                    if t == START:
+                        prev_cost = 0.0
+                    else:
+                        prev_cost = max([accumulated_cost[prev] for prev in predecessors[t]])
 
-                    #total_cost = prev_cost + task_cost
+                    total_cost = prev_cost + task_cost
 
                     if compl_time_on_n <= p.deadline:
-                        _obj = wCost*(task_cost/COST_NORMALIZER) + wMakespan*(compl_time_on_n/MAKESPAN_NORMALIZER)
+                        _obj = wCost*(total_cost/COST_NORMALIZER) + wMakespan*(compl_time_on_n/MAKESPAN_NORMALIZER)
 
                         is_better = _obj < (obj - EPSILON)
                         is_tie = abs(_obj - obj) <= EPSILON
@@ -265,11 +265,11 @@ class HEFTless:
 
             chosen_node = task_assignment[t]
 
-            #if t == START:
-            #    accumulated_cost[t] = 0.0
-            #else:
-            #    prev_c = max([accumulated_cost[prev] for prev in predecessors[t]])
-            #    accumulated_cost[t] = prev_c + (p.exectime[(t,chosen_node)] + p.init_time[(t,chosen_node)]) * p.cost[chosen_node]
+            if t == START:
+                accumulated_cost[t] = 0.0
+            else:
+                prev_c = max([accumulated_cost[prev] for prev in predecessors[t]])
+                accumulated_cost[t] = prev_c + (p.exectime[(t,chosen_node)] + p.init_time[(t,chosen_node)]) * p.cost[chosen_node]
 
             node_resource_timeline[chosen_node].append((best_start, best_end, p.task_memory[t], p.task_cpus[t]))
 
